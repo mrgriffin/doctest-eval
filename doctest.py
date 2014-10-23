@@ -96,7 +96,7 @@ __all__ = [
 import __future__
 
 import sys, traceback, inspect, linecache, os, re
-import unittest, difflib, pdb, tempfile
+import unittest, difflib, pdb, tempfile, ast
 import warnings
 from StringIO import StringIO
 from collections import namedtuple
@@ -1328,8 +1328,24 @@ class DocTestRunner:
             # If the example executed without raising any exceptions,
             # verify its output.
             if exception is None:
-                if check(example.want, got, self.optionflags):
-                    outcome = SUCCESS
+                # If want can be `eval`ed compare the result of the last
+                # expression with want, otherwise compare the want and
+                # got strings.
+                try:
+                    # If the last node in the source is not an expression
+                    # `_` will be set to an arbitrary value.
+                    tree = ast.parse(example.source)
+                    if not isinstance(tree.body[-1], ast.Expr):
+                        raise Exception # Fallback
+
+                    actual = test.globs['__builtins__'].get('_')
+                    expected = eval(example.want, test.globs)
+                except:
+                    if check(example.want, got, self.optionflags):
+                        outcome = SUCCESS
+                else:
+                    if expected == actual:
+                        outcome = SUCCESS
 
             # The example raised an exception:  check if it was expected.
             else:
@@ -2784,6 +2800,22 @@ __test__ = {"_TestClass": _TestClass,
                     [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
                      15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
                      27, 28, 29]
+            """,
+
+            "eval-ed expectation": r"""
+                 If the expected value is `eval`able, then it will be
+                 compared to the result with `==`.
+                     >>> {'any', 'order', 'works'}
+                     {'any', 'order', 'works'}
+
+                     >>> {'order', 'any', 'works'}
+                     {'any', 'order', 'works'}
+
+                     >>> {'a': 1, 'b': 2}
+                     {'a': 1, 'b': 2}
+
+                     >>> {'a': 1, 'b': 2}
+                     {'b': 2, 'a': 1}
             """,
            }
 
